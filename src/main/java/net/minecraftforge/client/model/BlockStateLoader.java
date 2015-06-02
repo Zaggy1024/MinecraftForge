@@ -65,14 +65,14 @@ public class BlockStateLoader
                         List<ModelBlockDefinition.Variant> mcVars = Lists.newArrayList();
                         for (ForgeBlockStateV1.Variant var : entry.getValue())
                         {
-                            ModelRotation rot = var.rotation.or(ModelRotation.X0_Y0);
-                            boolean uvLock = var.uvLock.or(false);
-                            int weight = var.weight.or(1);
+                            ModelRotation rot = var.getRotation().or(ModelRotation.X0_Y0);
+                            boolean uvLock = var.getUvLock().or(false);
+                            int weight = var.getWeight().or(1);
 
-                            if (var.model != null && var.submodels.size() == 0 && var.textures.size() == 0)
-                                mcVars.add(new ModelBlockDefinition.Variant(var.model, rot, uvLock, weight));
+                            if (var.getModel() != null && var.getSubmodels().size() == 0 && var.getTextures().size() == 0)
+                                mcVars.add(new ModelBlockDefinition.Variant(var.getModel(), rot, uvLock, weight));
                             else
-                                mcVars.add(new ForgeVariant(var.model, rot, uvLock, weight, var.textures, var.getOnlyPartsVariant()));
+                                mcVars.add(new ForgeVariant(var.getModel(), rot, uvLock, weight, var.getTextures(), var.getOnlyPartsVariant(), var.getCustomData()));
                         }
                         variants.add(new ModelBlockDefinition.Variants(entry.getKey(), mcVars));
                     }
@@ -96,58 +96,63 @@ public class BlockStateLoader
     }
 
     //This is here specifically so that we do not have a hard reference to ForgeBlockStateV1.Variant in ForgeVariant
-    public static interface ISubModel
+    public static class SubModel
     {
-        public ModelRotation getRotation();
-        public boolean isUVLock();
-        public Map<String, String> getTextures();
-        public ResourceLocation getModelLocation();
+        private final ModelRotation rotation;
+        private final boolean uvLock;
+        private final ImmutableMap<String, String> textures;
+        private final ResourceLocation model;
+        private final ImmutableMap<String, String> customData;
 
-        public static class Impl implements ISubModel
+        public SubModel(ModelRotation rotation, boolean uvLock, ImmutableMap<String, String> textures, ResourceLocation model, ImmutableMap<String, String> customData)
         {
-            final ModelRotation rotation;
-            final boolean uvLock;
-            final Map<String, String> textures;
-            final ResourceLocation model;
-
-            public Impl(ModelRotation rotation, boolean uvLock, Map<String, String> textures, ResourceLocation model)
-            {
-                this.rotation = rotation;
-                this.uvLock = uvLock;
-                this.textures = textures;
-                this.model = model;
-            }
-            @Override public ModelRotation getRotation() { return rotation; }
-            @Override public boolean isUVLock() { return uvLock; }
-            @Override public Map<String, String> getTextures() { return textures; }
-            @Override public ResourceLocation getModelLocation() { return model; }
+            this.rotation = rotation;
+            this.uvLock = uvLock;
+            this.textures = textures;
+            this.model = model;
+            this.customData = customData;
         }
+
+        public ModelRotation getRotation() { return rotation; }
+        public boolean isUVLock() { return uvLock; }
+        public ImmutableMap<String, String> getTextures() { return textures; }
+        public ResourceLocation getModelLocation() { return model; }
+        public ImmutableMap<String, String> getCustomData() { return customData; }
     }
 
     private static class ForgeVariant extends ModelBlockDefinition.Variant implements ISmartVariant
     {
-        Map<String, String> textures;
-        Map<String, ISubModel> parts;
+        private final ImmutableMap<String, String> textures;
+        private final ImmutableMap<String, SubModel> parts;
+        private final ImmutableMap<String, String> customData;
 
-        public ForgeVariant(ResourceLocation model, ModelRotation rotation, boolean uvLock, int weight,
-                Map<String, String> textures, Map<String, ISubModel> parts)
+        public ForgeVariant(ResourceLocation model, ModelRotation rotation, boolean uvLock, int weight, ImmutableMap<String, String> textures, ImmutableMap<String, SubModel> parts, ImmutableMap<String, String> customData)
         {
             super(model == null ? new ResourceLocation("builtin/missing") : model, rotation, uvLock, weight);
             this.textures = textures;
             this.parts = parts;
+            this.customData = customData;
         }
 
-        /**
-         * @return A new IModel retextured using the map of texture name -> texture path.
-         */
-        protected IModel retexture(IModel base, Map<String, String> textureMap)
+        protected IModel runModelHooks(IModel base, ImmutableMap<String, String> textureMap, ImmutableMap<String, String> customData)
         {
-            if (textureMap.isEmpty())
-                return base;
-            else if (base instanceof IRetexturableModel)
-                return ((IRetexturableModel)base).retexture(textureMap);
-            else
-                throw new RuntimeException("Attempted to retexture a non-retexturable model: " + base);
+            if (!customData.isEmpty())
+            {
+                if (base instanceof IModelCustomData)
+                    base = ((IModelCustomData)base).process(customData);
+                else
+                    throw new RuntimeException("Attempted to add custom data to a model that doesn't need it: " + base);
+            }
+
+            if (!textureMap.isEmpty())
+            {
+                if (base instanceof IRetexturableModel)
+                    base = ((IRetexturableModel)base).retexture(textureMap);
+                else
+                    throw new RuntimeException("Attempted to retexture a non-retexturable model: " + base);
+            }
+
+            return base;
         }
 
         /**
@@ -161,7 +166,7 @@ public class BlockStateLoader
 
             if (hasBase)
             {
-                base = retexture(base, textures);
+                base = runModelHooks(base, textures, customData);
 
                 if (size <= 0)
                     return base;
@@ -173,16 +178,16 @@ public class BlockStateLoader
             ModelRotation baseRot = getRotation();
             baseRot = getRotation();
             ImmutableMap.Builder<String, Pair<IModel, IModelState>> models = ImmutableMap.builder();
-            for (Entry<String, ISubModel> entry : parts.entrySet())
+            for (Entry<String, SubModel> entry : parts.entrySet())
             {
-                ISubModel part = entry.getValue();
+                SubModel part = entry.getValue();
 
                 Matrix4f matrix = new Matrix4f(baseRot.getMatrix());
                 matrix.mul(part.getRotation().getMatrix());
                 IModelState partState = new TRSRTransformation(matrix);
                 if (part.isUVLock()) partState = new ModelLoader.UVLock(partState);
 
-                models.put(entry.getKey(), Pair.of(retexture(loader.getModel(part.getModelLocation()), part.getTextures()), partState));
+                models.put(entry.getKey(), Pair.of(runModelHooks(loader.getModel(part.getModelLocation()), part.getTextures(), part.getCustomData()), partState));
             }
 
             return new MultiModel(hasBase ? base : null, models.build());

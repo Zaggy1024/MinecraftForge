@@ -12,12 +12,13 @@ import java.util.Map.Entry;
 import net.minecraft.client.resources.model.ModelRotation;
 import net.minecraft.util.JsonUtils;
 import net.minecraft.util.ResourceLocation;
-import net.minecraftforge.client.model.BlockStateLoader.ISubModel;
+import net.minecraftforge.client.model.BlockStateLoader.SubModel;
 import net.minecraftforge.client.model.BlockStateLoader.Marker;
 import net.minecraftforge.fml.common.FMLLog;
 
 import com.google.common.base.Optional;
 import com.google.common.collect.HashMultimap;
+import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
 import com.google.common.collect.Multimap;
@@ -245,14 +246,15 @@ public class ForgeBlockStateV1 extends Marker
     {
         public static final Object SET_VALUE = new Object();
 
-        public ResourceLocation model = null;
-        public boolean modelSet = false;
-        public Optional<ModelRotation> rotation = Optional.absent();
-        public Optional<Boolean> uvLock = Optional.absent();
-        public Optional<Integer> weight = Optional.absent();
-        public Map<String, String> textures = Maps.newHashMap();
-        public Map<String, List<ForgeBlockStateV1.Variant>> submodels = Maps.newHashMap();
-        public Map<String, Object> simpleSubmodels = Maps.newHashMap(); // Makeshift Set to allow us to "remove" (replace value with null) singleParts when needed.
+        private ResourceLocation model = null;
+        private boolean modelSet = false;
+        private Optional<ModelRotation> rotation = Optional.absent();
+        private Optional<Boolean> uvLock = Optional.absent();
+        private Optional<Integer> weight = Optional.absent();
+        private Map<String, String> textures = Maps.newHashMap();
+        private Map<String, List<ForgeBlockStateV1.Variant>> submodels = Maps.newHashMap();
+        private Map<String, Object> simpleSubmodels = Maps.newHashMap(); // Makeshift Set to allow us to "remove" (replace value with null) singleParts when needed.
+        private Map<String, String> customData = Maps.newHashMap();
 
         private Variant(){}
         /**
@@ -269,6 +271,7 @@ public class ForgeBlockStateV1 extends Marker
             this.textures.putAll(other.textures);
             this.submodels.putAll(other.submodels);
             this.simpleSubmodels.putAll(other.simpleSubmodels);
+            this.customData.putAll(other.customData);
         }
 
         /**
@@ -293,6 +296,12 @@ public class ForgeBlockStateV1 extends Marker
             {
                 if (!this.simpleSubmodels.containsKey(e.getKey()))
                     this.simpleSubmodels.put(e.getKey(), e.getValue());
+            }
+
+            for (Entry<String, String> e : parent.customData.entrySet())
+            {
+                if (!this.customData.containsKey(e.getKey()))
+                    this.customData.put(e.getKey(), e.getValue());
             }
 
             return this;
@@ -326,22 +335,20 @@ public class ForgeBlockStateV1 extends Marker
             return output;
         }
 
-        protected ISubModel asGenericSubModel()
+        protected SubModel asGenericSubModel()
         {
-            return new ISubModel.Impl(rotation.or(ModelRotation.X0_Y0), uvLock.or(false), textures, model);
+            return new SubModel(rotation.or(ModelRotation.X0_Y0), uvLock.or(false), getTextures(), model, getCustomData());
         }
 
         /**
          * Gets a list containing the single variant of each part.
          * Will throw an error if this Variant has multiple variants for a submodel.
          */
-        public Map<String, ISubModel> getOnlyPartsVariant()
+        public ImmutableMap<String, SubModel> getOnlyPartsVariant()
         {
-            Map<String, ISubModel> output = Collections.emptyMap();
-
             if (submodels.size() > 0)
             {
-                output = Maps.newHashMapWithExpectedSize(submodels.size());
+                ImmutableMap.Builder<String, SubModel> builder = ImmutableMap.builder();
 
                 for (Entry<String, List<ForgeBlockStateV1.Variant>> entry : submodels.entrySet())
                 {
@@ -350,16 +357,18 @@ public class ForgeBlockStateV1 extends Marker
                     if (part != null)
                     {
                         if (part.size() == 1)
-                            output.put(entry.getKey(), part.get(0).asGenericSubModel());
+                            builder.put(entry.getKey(), part.get(0).asGenericSubModel());
                         else
                             throw new RuntimeException("Something attempted to get the list of submodels "
                                     + "for a variant with model \"" + model + "\", when this variant "
                                     + "contains multiple variants for submodel " + entry.getKey());
                     }
                 }
+                return builder.build();
             }
-
-            return output;
+            else {
+                return ImmutableMap.of();
+            }
         }
 
         public static class Deserializer implements JsonDeserializer<ForgeBlockStateV1.Variant>
@@ -481,10 +490,30 @@ public class ForgeBlockStateV1 extends Marker
                     }
                 }
 
+                if (json.has("custom"))
+                {
+                    for (Entry<String, JsonElement> e : json.get("custom").getAsJsonObject().entrySet())
+                    {
+                        if (e.getValue().isJsonNull())
+                            ret.customData.put(e.getKey(), null);
+                        else
+                            ret.customData.put(e.getKey(), e.getValue().toString());
+                    }
+                }
+
                 simpleSubmodelKey = null;
 
                 return ret;
             }
         }
+
+        public ResourceLocation getModel() { return model; }
+        public boolean isModelSet() { return modelSet; }
+        public Optional<ModelRotation> getRotation() { return rotation; }
+        public Optional<Boolean> getUvLock() { return uvLock; }
+        public Optional<Integer> getWeight() { return weight; }
+        public ImmutableMap<String, String> getTextures() { return ImmutableMap.copyOf(textures); }
+        public ImmutableMap<String, List<ForgeBlockStateV1.Variant>> getSubmodels() { return ImmutableMap.copyOf(submodels); }
+        public ImmutableMap<String, String> getCustomData() { return ImmutableMap.copyOf(customData); }
     }
 }

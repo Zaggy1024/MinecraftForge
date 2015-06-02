@@ -279,7 +279,7 @@ public class ModelLoader extends ModelBakery
         }
 
         @Override
-        public IModel retexture(Map<String, String> textures)
+        public IModel retexture(ImmutableMap<String, String> textures)
         {
             if (textures.isEmpty())
                 return this;
