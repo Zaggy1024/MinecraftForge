@@ -134,17 +134,19 @@ public class MultiModel implements IModel
     }
     
     protected final IModel base;
+    protected final IModelState baseState;
     protected final Map<String, Pair<IModel, IModelState>> parts;
     
-    public MultiModel(IModel base, ImmutableMap<String, Pair<IModel, IModelState>> parts)
+    public MultiModel(IModel base, IModelState baseState, ImmutableMap<String, Pair<IModel, IModelState>> parts)
     {
         this.base = base;
+        this.baseState = baseState;
         this.parts = parts;
     }
 
-    public MultiModel(IModel base, Map<String, Pair<IModel, IModelState>> parts)
+    public MultiModel(IModel base, IModelState baseState, Map<String, Pair<IModel, IModelState>> parts)
     {
-        this(base, ImmutableMap.copyOf(parts));
+        this(base, baseState, ImmutableMap.copyOf(parts));
     }
     
     @Override
@@ -176,12 +178,12 @@ public class MultiModel implements IModel
     }
     
     @Override
-    public IFlexibleBakedModel bake(final IModelState state, VertexFormat format, Function<ResourceLocation, TextureAtlasSprite> bakedTextureGetter)
+    public IFlexibleBakedModel bake(IModelState state, VertexFormat format, Function<ResourceLocation, TextureAtlasSprite> bakedTextureGetter)
     {
         IFlexibleBakedModel bakedBase = null;
         
         if (base != null)
-            bakedBase = base.bake(state, format, bakedTextureGetter);
+            bakedBase = base.bake(baseState, format, bakedTextureGetter);
         
         ImmutableMap.Builder<String, IFlexibleBakedModel> mapBuilder = ImmutableMap.builder();
         

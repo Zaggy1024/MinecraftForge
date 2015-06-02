@@ -176,7 +176,6 @@ public class BlockStateLoader
             // If baseRot is non-null, then that rotation will be applied instead of the base model's rotation.
             // This is used to allow replacing base model with a submodel when there is no base model for a variant.
             ModelRotation baseRot = getRotation();
-            baseRot = getRotation();
             ImmutableMap.Builder<String, Pair<IModel, IModelState>> models = ImmutableMap.builder();
             for (Entry<String, SubModel> entry : parts.entrySet())
             {
@@ -190,7 +189,7 @@ public class BlockStateLoader
                 models.put(entry.getKey(), Pair.of(runModelHooks(loader.getModel(part.getModelLocation()), part.getTextures(), part.getCustomData()), partState));
             }
 
-            return new MultiModel(hasBase ? base : null, models.build());
+            return new MultiModel(hasBase ? base : null, baseRot, models.build());
         }
 
         @Override
